@@ -6,8 +6,6 @@ import (
 	"net"
 )
 
-//Code Sample written by Daniel Haimanot - danielhaimanot@gmail.com 
-
 //IPAddress is used to manipulate, convert and compare IPv4 or IPv6 addresses. 
 type IPAddress struct {
 	net.IP
