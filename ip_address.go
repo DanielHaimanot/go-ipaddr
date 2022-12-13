@@ -1,4 +1,4 @@
-package net
+package netip
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"net"
 )
 
-//IPAddress is used to manipulate, convert and compare IPv4 or IPv6 addresses. 
+// IPAddress is used to manipulate, convert and compare IPv4 or IPv6 addresses.
 type IPAddress struct {
 	net.IP
 	CIDR int
