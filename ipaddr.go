@@ -1,4 +1,4 @@
-package netip
+package ipaddr
 
 import (
 	"errors"
