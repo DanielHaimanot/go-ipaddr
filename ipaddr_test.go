@@ -358,14 +358,17 @@ func TestIPCompare(t *testing.T) {
 
 		assert.Equal(t, test.lower, l.String())
 		assert.Equal(t, test.upper, u.String())
-
-		assert.Equal(t, test.lower, ip.ToNetworkAddress().String())
+		netAddr, ok := ip.ToNetworkAddress()
+		assert.True(t, ok)
+		assert.Equal(t, test.lower, netAddr.String())
 	}
 
 	// Check calculating subnet broadcast address
 	var ip IPAddress
 	assert.Nil(t, ip.FromString("73.65.175.1/25"))
-	assert.Equal(t, "73.65.175.127", ip.ToBroadcastAddress().String())
+	netAddr, ok := ip.ToBroadcastAddress()
+	assert.True(t, ok)
+	assert.Equal(t, "73.65.175.127", netAddr.String())
 
 	// check address within and contained in subnet
 	testOverlap := []struct {
