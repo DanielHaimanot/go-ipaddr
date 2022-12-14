@@ -2,20 +2,21 @@ package ipaddr
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 )
 
-// IPAddress is used to manipulate, convert and compare IPv4 or IPv6 addresses.
 type IPAddress struct {
 	net.IP
 	CIDR int
 }
 
-type AddrCompareOperator int
+// CompareOperator specifies supported compare operators
+type CompareOperator int
 
 const (
-	LT AddrCompareOperator = iota
+	LT CompareOperator = iota
 	LE
 	GT
 	GE
@@ -23,13 +24,21 @@ const (
 	EQ
 )
 
-type AddrCompareType int
+// CompareMode specifies whether CIDR value
+// is included in address comparison ops.
+type CompareMode int
 
 const (
-	Strict AddrCompareType = iota
+	// Compare Strict mode uses greatest IP within CIDR
+	// address range for comparison ops.
+	Strict CompareMode = iota
+
+	// Compare Value compares IP address value and ignores CIDR
+	// address range.
 	Value
 )
 
+// IPAddressType represents IPv4 or IPv6 type
 type IPAddressType int
 
 const (
@@ -42,25 +51,25 @@ const (
 	IPV6_HOST_CIDR = 128
 )
 
-// Set the IP address from a.b.c.d byte notation
-func (addr *IPAddress) SetIPv4(a byte, b byte, c byte, d byte) {
+// IPv4 set single IPv4 from bytes.
+func (addr *IPAddress) IPv4(a byte, b byte, c byte, d byte) {
 	addr.IP = net.IPv4(a, b, c, d)
 	addr.CIDR = IPV4_HOST_CIDR
 }
 
-// Set the IP address from a.b.c.d byte notation + cidr
-func (addr *IPAddress) SetIPv4WithCIDR(a, b, c, d byte, cidr int) {
+// IPv4WithCIDR set single IPv4 from bytes with cidr value.
+func (addr *IPAddress) IPv4WithCIDR(a, b, c, d byte, cidr int) {
 	addr.IP = net.IPv4(a, b, c, d)
 	addr.CIDR = cidr
 }
 
-// Set the IPv4 address from integer type
+// IPv4FromInt sets IPv4 from integer value
 func (addr *IPAddress) IPv4FromInt(intAddress uint32) {
-	addr.SetIPv4(byte((intAddress>>24)&0xFF), byte((intAddress>>16)&0xFF), byte((intAddress>>8)&0xFF), byte(intAddress&0xFF))
+	addr.IPv4(byte((intAddress>>24)&0xFF), byte((intAddress>>16)&0xFF), byte((intAddress>>8)&0xFF), byte(intAddress&0xFF))
 	addr.CIDR = IPV4_HOST_CIDR
 }
 
-// Set the IPv6 address from big integer
+// IPv4FromInt set IPv6 from integer value
 func (addr *IPAddress) IPv6FromInt(newInt *big.Int) error {
 	if newInt.BitLen() > IPV6_HOST_CIDR {
 		return errors.New("Exceeds 128 bits")
@@ -74,11 +83,11 @@ func (addr *IPAddress) IPv6FromInt(newInt *big.Int) error {
 
 	addr.IP = intBytes
 	addr.CIDR = IPV6_HOST_CIDR
-
 	return nil
 }
 
-// Set the IP address from string type
+// FromString set both IPv4 and IPv6 from string value with
+// optional CIDR format.
 func (addr *IPAddress) FromString(ipAddress string) error {
 	ipAddr, ipNet, err := net.ParseCIDR(ipAddress)
 
@@ -96,35 +105,31 @@ func (addr *IPAddress) FromString(ipAddress string) error {
 		}
 	} else {
 		cidrVal, _ := ipNet.Mask.Size()
-		if cidrVal <= 0 {
+		if cidrVal < 0 {
 			return errors.New("Invalid address string")
 		}
 		addr.IP = ipAddr
 		addr.CIDR = cidrVal
 	}
-
 	return nil
 }
 
-// Returns true when address is an IPv4 address
 func (addr *IPAddress) IsIPv4() bool {
 	if addr.To4() != nil {
 		return true
 	}
-
 	return false
 }
 
-// Returns true when address is strictly IPv6 address
 func (addr *IPAddress) IsIPv6() bool {
 	if len(addr.To4()) == 0 && len(addr.To16()) == net.IPv6len {
 		return true
 	}
-
 	return false
 }
 
-func (addr *IPAddress) IsValidIPv4Subnet() bool {
+// IsIPv4Subnet checks whether IPv4 address specifies a subnet range
+func (addr *IPAddress) IsIPv4Subnet() bool {
 	if addr.IsIPv4() == false {
 		return false
 	}
@@ -140,11 +145,9 @@ func (addr *IPAddress) IsValidIPv4Subnet() bool {
 			return false
 		}
 	}
-
 	return true
 }
 
-// Check whether an address is IPv4 or IPv6.
 func (addr *IPAddress) Type() IPAddressType {
 	if addr.IsIPv6() == true {
 		return IPAddressIPv6
@@ -153,12 +156,12 @@ func (addr *IPAddress) Type() IPAddressType {
 	}
 }
 
-// Compares IPv4 or IPv6 addresses according to the AddrCompareOperator operator
-// If AddrCompareType equals Value we only compare address
-// If AddrCompareType equals Strict we compare address + CIDR and type
-func (addr *IPAddress) Compare(rhs IPAddress, compOps AddrCompareOperator, compMode AddrCompareType) bool {
-	lhsTop := new(IPAddress)
-	rhsTop := new(IPAddress)
+// Compare IPv4 or IPv6 addresses according to the CompareOperator operator
+func (addr *IPAddress) Compare(rhs IPAddress, compOps CompareOperator, compMode CompareMode) bool {
+	var (
+		lhsTop = new(IPAddress)
+		rhsTop = new(IPAddress)
+	)
 
 	if (len(addr.IP) != len(rhs.IP)) && compMode == Strict {
 		if compOps == NE {
@@ -168,7 +171,7 @@ func (addr *IPAddress) Compare(rhs IPAddress, compOps AddrCompareOperator, compM
 		}
 	}
 
-	if compMode == Strict { // Strict includes the CIDR in compare
+	if compMode == Strict {
 		lhsTop = addr.End()
 		rhsTop = rhs.End()
 	} else {
@@ -234,38 +237,36 @@ func (addr *IPAddress) Compare(rhs IPAddress, compOps AddrCompareOperator, compM
 	return false
 }
 
-// Check if current address is less than or equal to rhs address
-// Compare is either Strict (Addr+Cidr+Type) or Value only
-func (addr *IPAddress) LE(rhs IPAddress, compMode AddrCompareType) bool {
+// LE checks if less than or equal to address
+func (addr *IPAddress) LE(rhs IPAddress, compMode CompareMode) bool {
 	return addr.Compare(rhs, LE, compMode)
 }
 
-// Check if current address is less than rhs address
-func (addr *IPAddress) LT(rhs IPAddress, compMode AddrCompareType) bool {
+// LT checks if less than address
+func (addr *IPAddress) LT(rhs IPAddress, compMode CompareMode) bool {
 	return addr.Compare(rhs, LT, compMode)
 }
 
-// Check if current address is greater than rhs address
-func (addr *IPAddress) GT(rhs IPAddress, compMode AddrCompareType) bool {
+// GT checks if greater than address
+func (addr *IPAddress) GT(rhs IPAddress, compMode CompareMode) bool {
 	return addr.Compare(rhs, GT, compMode)
 }
 
-// Check if current address is greater than or equal to rhs address
-func (addr *IPAddress) GE(rhs IPAddress, compMode AddrCompareType) bool {
+// GE checks if greater than or equal to address
+func (addr *IPAddress) GE(rhs IPAddress, compMode CompareMode) bool {
 	return addr.Compare(rhs, GE, compMode)
 }
 
-// Check if current ip address is equal to rhs address
-func (addr *IPAddress) EQ(rhs IPAddress, compMode AddrCompareType) bool {
+// EQ check if equal to address
+func (addr *IPAddress) EQ(rhs IPAddress, compMode CompareMode) bool {
 	return addr.Compare(rhs, EQ, compMode)
 }
 
-// Check if current IP address is not equal to rhs address
-func (addr *IPAddress) NE(rhs IPAddress, compMode AddrCompareType) bool {
+// NE check if not equal to address
+func (addr *IPAddress) NE(rhs IPAddress, compMode CompareMode) bool {
 	return addr.Compare(rhs, NE, compMode)
 }
 
-// Convert the IPv4 address to an integer
 func (addr *IPAddress) IPv4ToInt() (uint32, error) {
 	if addr.IsIPv4() == true {
 		i := 15
@@ -277,36 +278,32 @@ func (addr *IPAddress) IPv4ToInt() (uint32, error) {
 		return result, nil
 
 	} else {
-		return 0, errors.New("Not IPv4")
+		return 0, fmt.Errorf("failed to convert to uint32")
 	}
 }
 
-// Convert IPv6 address to big.Int
 func (addr *IPAddress) IPv6ToInt() (*big.Int, error) {
 	if addr.IsIPv6() == true {
 		ipInt := new(big.Int)
 		ipInt.SetBytes(addr.IP)
 		return ipInt, nil
 	} else {
-		return nil, errors.New("Not IPv6")
+		return nil, fmt.Errorf("failed to convert to *big.int")
 	}
 }
 
-// Bitwise AND between IP address and CIDR results in the network address
 func (addr *IPAddress) ToNetworkAddress() *IPAddress {
 	return addr.Start()
 }
 
-// Bitwise OR between network address and inverted CIDR results in broadcast address for IPv6 addresses
 func (addr *IPAddress) ToBroadcastAddress() *IPAddress {
 	if addr.IsIPv4() == false {
 		return nil
 	}
-
 	return addr.End()
 }
 
-// End() returns the highest address in the IP + CIDR
+// End returns the highest address in the IP CIDR range.
 func (addr *IPAddress) End() *IPAddress {
 	var endAddr IPAddress
 	var maskSize int
@@ -338,7 +335,7 @@ func (addr *IPAddress) End() *IPAddress {
 	return &endAddr
 }
 
-// Return the lowest IP address in the range
+// Start returns the lowest address in IP CIDR range.
 func (addr *IPAddress) Start() *IPAddress {
 	var netAddr IPAddress
 	var maskSize int
@@ -429,125 +426,77 @@ func (addr *IPAddress) NOT() *IPAddress {
 	for i := 0; i < len(addr.IP); i++ {
 		addr.IP[i] = addr.IP[i] ^ 0xff
 	}
-
 	return addr
 }
 
-// CIDRToMask converts the address CIDR to a.b.c.d mask (net.IPMask is []byte)
-func (addr *IPAddress) CIDRToMask() *IPAddress {
-	maskAddr := IPAddress{}
-	var maskSize int
-
-	if addr.Type() == IPAddressIPv4 {
-		maskSize = net.IPv4len
-		maskAddr.CIDR = IPV4_HOST_CIDR
-	} else if addr.Type() == IPAddressIPv6 {
-		maskSize = net.IPv6len
-		maskAddr.CIDR = IPV6_HOST_CIDR
-	} else {
+func (addr *IPAddress) Add(value int) *IPAddress {
+	switch addr.Type() {
+	case IPAddressIPv6:
+		newVal, _ := addr.IPv6ToInt()
+		newVal.Add(newVal, big.NewInt(int64(value)))
+		addr.IPv6FromInt(newVal)
+	case IPAddressIPv4:
+		newVal, _ := addr.IPv4ToInt()
+		addr.IPv4FromInt(uint32(value) + newVal)
+	default:
 		return nil
 	}
+	return addr
+}
 
-	if addr.CIDR > 8*maskSize {
+func (addr *IPAddress) Subtract(value int) *IPAddress {
+	switch addr.Type() {
+	case IPAddressIPv6:
+		newVal, _ := addr.IPv6ToInt()
+		newVal.Sub(newVal, big.NewInt(int64(value)))
+		addr.IPv6FromInt(newVal)
+	case IPAddressIPv4:
+		newVal, _ := addr.IPv4ToInt()
+		addr.IPv4FromInt(newVal - uint32(value))
+	default:
 		return nil
 	}
-
-	mask := net.CIDRMask(addr.CIDR, 8*maskSize)
-	maskAddr.IP = make(net.IP, len(mask))
-	copy(maskAddr.IP, mask)
-	return &maskAddr
+	return addr
 }
 
-// CIDRFromMask converts IP portion as a.b.c.d... mask to CIDR notation
-func (addr *IPAddress) CIDRFromMask(ipMask IPAddress) (int, error) {
-	mask := make(net.IPMask, len(ipMask.IP))
-	copy(mask, ipMask.IP)
-
-	ones, l := mask.Size()
-
-	if l == 8*net.IPv4len && addr.Type() == IPAddressIPv4 {
-		addr.CIDR = ones
-	} else if l == 8*net.IPv6len && addr.Type() == IPAddressIPv6 {
-		addr.CIDR = ones
-	} else {
-		return 0, errors.New("Incorrect mask length")
+// Range calculates the start and end of addr ip range
+func (addr *IPAddress) Range() (*IPAddress, *IPAddress, error) {
+	if addr.End() == nil || addr.Start() == nil {
+		return nil, nil, fmt.Errorf("nil start/end subnet range")
 	}
-
-	return ones, nil
+	return addr.Start(), addr.End(), nil
 }
 
-// Add integer to IP address
-func (addr *IPAddress) Add(value int) error {
-	if addr.IsIPv4() == true {
-		if val, err := addr.IPv4ToInt(); err == nil {
-			addr.IPv4FromInt(uint32(value) + val)
-			return nil
-		}
-	} else if addr.IsIPv6() == true {
-		if val, err := addr.IPv6ToInt(); err == nil {
-			result := val.Add(val, big.NewInt(int64(value)))
-			return addr.IPv6FromInt(result)
-		}
-	}
+// Overlaps checks if addr and ip range overlap -- [addr, rh]
+func (addr *IPAddress) Overlaps(rh IPAddress) bool {
+	lhStart, lhEnd, err1 := addr.Range()
+	rhStart, rhEnd, err2 := rh.Range()
 
-	return errors.New("Invalid type error")
-}
-
-// Subtract integer from IP address
-func (addr *IPAddress) Subtract(value int) error {
-	if addr.IsIPv4() == true {
-		if val, err := addr.IPv4ToInt(); err == nil {
-			addr.IPv4FromInt(uint32(value) - val)
-			return nil
-		}
-	} else if addr.IsIPv6() == true {
-		if val, err := addr.IPv6ToInt(); err == nil {
-			result := val.Sub(val, big.NewInt(int64(value)))
-			return addr.IPv6FromInt(result)
-		}
-	}
-
-	return errors.New("Invalid type")
-}
-
-// Within reports whether the IP range is strict/equal within another IP range
-func (addr *IPAddress) Within(rhs IPAddress, comparetype AddrCompareType) bool {
-	lhsEnd := addr.End()
-	lhsStart := addr.Start()
-	rhsEnd := rhs.End()
-	rhsStart := rhs.Start()
-
-	if lhsEnd == nil || rhsEnd == nil || rhsStart == nil || lhsStart == nil {
+	if err1 != nil || err2 != nil {
 		return false
 	}
-
-	isEqual := lhsStart.GE(*rhsStart, Value) && lhsEnd.LE(*rhsEnd, Value)
-	isStrict := lhsStart.GT(*rhsStart, Value) && lhsEnd.LT(*rhsEnd, Value)
-
-	if comparetype == Value {
-		return isEqual
-	} else {
-		return isStrict
-	}
+	return lhStart.GE(*rhStart, Value) && lhEnd.LE(*rhEnd, Value) ||
+		lhStart.LE(*rhStart, Value) && lhEnd.GE(*rhEnd, Value)
 }
 
-// Contains reports whether the IP range contains another IP range either strictly/equally
-func (addr *IPAddress) Contains(rhs IPAddress, compareType AddrCompareType) bool {
-	lhsEnd := addr.End()
-	lhsStart := addr.Start()
-	rhsEnd := rhs.End()
-	rhsStart := rhs.Start()
+// Within reports whether the IP range is strict/equal within another IP range.
+func (addr *IPAddress) Within(rh IPAddress) bool {
+	lhStart, lhEnd, err1 := addr.Range()
+	rhStart, rhEnd, err2 := rh.Range()
 
-	if lhsEnd == nil || rhsEnd == nil || lhsStart == nil || rhsStart == nil {
+	if err1 != nil || err2 != nil {
 		return false
 	}
+	return lhStart.GT(*rhStart, Value) && lhEnd.LT(*rhEnd, Value)
+}
 
-	isEqual := lhsStart.LE(*rhsStart, Value) && lhsEnd.GE(*rhsEnd, Value)
-	isStrict := lhsStart.LT(*rhsStart, Value) && lhsEnd.GT(*rhsEnd, Value)
+// Contains reports whether the IP range contains another IP range either strictly/equally.
+func (addr *IPAddress) Contains(rh IPAddress) bool {
+	lhStart, lhEnd, err1 := addr.Range()
+	rhStart, rhEnd, err2 := rh.Range()
 
-	if compareType == Value {
-		return isEqual
-	} else {
-		return isStrict
+	if err1 != nil || err2 != nil {
+		return false
 	}
+	return lhStart.LT(*rhStart, Value) && lhEnd.GT(*rhEnd, Value)
 }
